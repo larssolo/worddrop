@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Word Drop</title>
+  <meta name="description" content="WordPress overlay plugin with PWA — drop a word on the world.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:ital,wght@0,300;0,400;1,300&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #060606;
+      --surface: #0d0d0d;
+      --line:    #1a1a1a;
+      --dim:     #333;
+      --text:    #a8a8a8;
+      --white:   #f5f2ed;
+      --lime:    #c8ff00;
+      --red:     #ff2d2d;
+      --display: 'Archivo Black', sans-serif;
+      --body:    'Archivo', sans-serif;
+      --mono:    'DM Mono', monospace;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--body);
+      font-size: 15px;
+      line-height: 1.65;
+      overflow-x: hidden;
+      cursor: none;
+    }
+
+    /* CUSTOM CURSOR */
+    #cursor {
+      position: fixed;
+      width: 12px; height: 12px;
+      background: var(--lime);
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 99999;
+      transform: translate(-50%, -50%);
+      transition: width 0.2s, height 0.2s;
+      mix-blend-mode: difference;
+    }
+    #cursor.big { width: 48px; height: 48px; }
+
+    /* SCANLINES */
+    body::after {
+      content: '';
+      position: fixed; inset: 0;
+      background: repeating-linear-gradient(
+        to bottom,
+        transparent 0px, transparent 3px,
+        rgba(0,0,0,0.07) 3px, rgba(0,0,0,0.07) 4px
+      );
+      pointer-events: none;
+      z-index: 9998;
+    }
+
+    /* NOISE */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 9997;
+      opacity: 0.5;
+    }
+
+    /* HERO */
+    #hero {
+      min-height: 100svh;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      padding: clamp(1.5rem, 4vw, 4rem);
+      position: relative;
+      overflow: hidden;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .hero-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+
+    .hero-badge {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--dim);
+      border: 1px solid var(--line);
+      padding: 0.4rem 0.8rem;
+      opacity: 0;
+      animation: fadeIn 0.5s 0.2s forwards;
+    }
+
+    .hero-version {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--dim);
+      letter-spacing: 0.15em;
+      opacity: 0;
+      animation: fadeIn 0.5s 0.3s forwards;
+    }
+
+    .hero-titles {
+      align-self: center;
+      padding: 2rem 0;
+    }
+
+    .hero-word {
+      font-family: var(--display);
+      font-size: clamp(5.5rem, 20vw, 18rem);
+      line-height: 0.85;
+      letter-spacing: -0.03em;
+      color: var(--white);
+      overflow: hidden;
+      display: block;
+    }
+
+    .hero-word .inner {
+      display: block;
+      transform: translateY(110%);
+      animation: slideUp 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    .hero-word:first-child .inner { animation-delay: 0.1s; }
+    .hero-word:last-child  .inner { animation-delay: 0.25s; color: var(--lime); }
+
+    @keyframes slideUp { to { transform: translateY(0); } }
+    @keyframes fadeIn  { to { opacity: 1; } }
+
+    .hero-bottom {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 2rem;
+      flex-wrap: wrap;
+      padding-top: 2.5rem;
+      border-top: 1px solid var(--line);
+      opacity: 0;
+      animation: fadeIn 0.6s 0.7s forwards;
+    }
+
+    .hero-desc {
+      font-size: clamp(14px, 1.4vw, 17px);
+      color: var(--text);
+      font-weight: 300;
+      max-width: 44ch;
+      line-height: 1.65;
+    }
+
+    .hero-actions { display: flex; gap: 1rem; align-items: center; flex-shrink: 0; }
+
+    /* BUTTONS */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.9rem 2rem;
+      background: var(--lime);
+      color: var(--bg);
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 500;
+      text-decoration: none;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      border: none;
+      cursor: none;
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.15s;
+    }
+    .btn::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: var(--white);
+      transform: translateX(-101%);
+      transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .btn:hover::before { transform: translateX(0); }
+    .btn:hover { transform: translateY(-2px); }
+    .btn span { position: relative; z-index: 1; }
+
+    .btn-outline {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--line);
+    }
+    .btn-outline::before { background: var(--surface); }
+    .btn-outline:hover { color: var(--white); }
+
+    /* SECTION */
+    .section {
+      padding: clamp(5rem, 12vh, 10rem) clamp(1.5rem, 4vw, 4rem);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .tag {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: var(--lime);
+      margin-bottom: 3.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .tag::before { content: ''; width: 24px; height: 1px; background: var(--lime); }
+
+    /* MARQUEE */
+    .marquee-wrap {
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      overflow: hidden;
+      padding: 0.9rem 0;
+      background: var(--surface);
+    }
+    .marquee-track {
+      display: flex;
+      width: max-content;
+      animation: marquee 20s linear infinite;
+    }
+    .marquee-item {
+      font-family: var(--display);
+      font-size: 0.9rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--dim);
+      padding: 0 2rem;
+      white-space: nowrap;
+    }
+    .marquee-item span { color: var(--lime); margin-right: 2rem; }
+    @keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+
+    /* ORIGIN */
+    #origin .layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: clamp(3rem, 6vw, 8rem);
+      align-items: start;
+    }
+
+    #origin h2 {
+      font-family: var(--display);
+      font-size: clamp(2.8rem, 5.5vw, 5.5rem);
+      color: var(--white);
+      line-height: 0.92;
+      letter-spacing: -0.03em;
+      margin-bottom: 2rem;
+    }
+    #origin h2 .accent { color: var(--lime); }
+
+    #origin p {
+      font-size: 16px;
+      font-weight: 300;
+      line-height: 1.8;
+      color: var(--text);
+    }
+    #origin p a {
+      color: var(--lime);
+      text-decoration: none;
+      border-bottom: 1px solid var(--lime);
+      transition: color 0.15s, border-color 0.15s;
+    }
+    #origin p a:hover { color: var(--white); border-bottom-color: var(--white); }
+
+    .credits-stack { display: flex; flex-direction: column; }
+
+    .credit-item {
+      padding: 2rem 0;
+      border-bottom: 1px solid var(--line);
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 1.5rem;
+      align-items: center;
+    }
+    .credit-item:first-child { border-top: 1px solid var(--line); }
+
+    .credit-marker {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--lime);
+      flex-shrink: 0;
+    }
+    .credit-item.ai .credit-marker { background: var(--red); }
+
+    .credit-name {
+      font-family: var(--display);
+      font-size: clamp(1.8rem, 3.5vw, 2.8rem);
+      color: var(--white);
+      letter-spacing: -0.02em;
+      line-height: 1;
+    }
+    .credit-name a {
+      color: inherit; text-decoration: none;
+      transition: color 0.15s;
+    }
+    .credit-name a:hover { color: var(--lime); }
+
+    .credit-role {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--dim);
+      margin-top: 0.4rem;
+    }
+
+    /* FEATURES */
+    #features .feat-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      border: 1px solid var(--line);
+    }
+
+    .feat {
+      padding: 2.5rem 2rem;
+      border-right: 1px solid var(--line);
+      position: relative;
+      overflow: hidden;
+      transition: background 0.3s;
+    }
+    .feat:last-child { border-right: none; }
+    .feat::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 2px;
+      background: var(--lime);
+      transform: scaleX(0);
+      transform-origin: left;
+      transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .feat:hover { background: var(--surface); }
+    .feat:hover::after { transform: scaleX(1); }
+
+    .feat-num {
+      font-family: var(--display);
+      font-size: 5rem;
+      color: var(--line);
+      line-height: 1;
+      margin-bottom: 1.5rem;
+      transition: color 0.3s;
+    }
+    .feat:hover .feat-num { color: var(--lime); }
+
+    .feat-title {
+      font-family: var(--display);
+      font-size: 1.25rem;
+      color: var(--white);
+      letter-spacing: -0.01em;
+      margin-bottom: 0.75rem;
+    }
+    .feat-body { font-size: 13px; font-weight: 300; color: var(--text); line-height: 1.7; }
+
+    /* STEPS */
+    .steps-layout {
+      display: grid;
+      grid-template-columns: 38% 1fr;
+      gap: clamp(3rem, 6vw, 8rem);
+      align-items: start;
+    }
+
+    .steps-heading {
+      font-family: var(--display);
+      font-size: clamp(3rem, 5.5vw, 5rem);
+      color: var(--white);
+      line-height: 0.9;
+      letter-spacing: -0.03em;
+      position: sticky;
+      top: 3rem;
+    }
+    .steps-heading .accent { color: var(--lime); }
+
+    .step-row {
+      display: grid;
+      grid-template-columns: 3.5rem 1fr;
+      gap: 1.5rem;
+      padding: 1.75rem 0;
+      border-bottom: 1px solid var(--line);
+      align-items: baseline;
+    }
+    .step-row:first-child { border-top: 1px solid var(--line); }
+    .step-row:hover .step-n { color: var(--lime); }
+
+    .step-n {
+      font-family: var(--display);
+      font-size: 2.5rem;
+      color: var(--line);
+      line-height: 1;
+      transition: color 0.2s;
+    }
+    .step-t { font-size: 15px; font-weight: 300; color: var(--text); padding-top: 0.5rem; line-height: 1.6; }
+
+    /* CTA */
+    #cta {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: clamp(5rem, 14vh, 12rem) clamp(1.5rem, 4vw, 4rem);
+      position: relative;
+      overflow: hidden;
+    }
+
+    #cta::before {
+      content: 'GET IT';
+      position: absolute;
+      font-family: var(--display);
+      font-size: clamp(8rem, 22vw, 22rem);
+      color: transparent;
+      -webkit-text-stroke: 1px var(--line);
+      letter-spacing: -0.04em;
+      pointer-events: none;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      white-space: nowrap;
+      opacity: 0.35;
+    }
+
+    .cta-tag {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      color: var(--lime);
+      margin-bottom: 1.5rem;
+      position: relative;
+    }
+
+    .cta-big {
+      font-family: var(--display);
+      font-size: clamp(4.5rem, 14vw, 13rem);
+      color: var(--white);
+      line-height: 0.85;
+      letter-spacing: -0.04em;
+      margin-bottom: 3rem;
+      position: relative;
+    }
+    .cta-big span { color: var(--lime); }
+
+    /* FOOTER */
+    footer {
+      padding: 1.75rem clamp(1.5rem, 4vw, 4rem);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--dim);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      border-top: 1px solid var(--line);
+    }
+
+    /* REVEAL */
+    .reveal {
+      opacity: 0;
+      transform: translateY(32px);
+      transition: opacity 0.7s ease, transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .reveal.up { opacity: 1; transform: none; }
+
+    /* MOBILE */
+    @media (max-width: 900px) {
+      #features .feat-grid { grid-template-columns: 1fr 1fr; }
+      .feat { border-bottom: 1px solid var(--line); }
+      .feat:nth-child(even) { border-right: none; }
+    }
+    @media (max-width: 700px) {
+      body { cursor: auto; }
+      #cursor { display: none; }
+      #origin .layout, .steps-layout { grid-template-columns: 1fr; gap: 2.5rem; }
+      .steps-heading { position: static; }
+      #features .feat-grid { grid-template-columns: 1fr; }
+      .feat { border-right: none; }
+      .hero-bottom { flex-direction: column; align-items: flex-start; }
+      footer { flex-direction: column; gap: 0.4rem; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="cursor"></div>
+
+<!-- HERO -->
+<section id="hero">
+  <div class="hero-top">
+    <div class="hero-badge">WordPress Plugin · PWA</div>
+    <div class="hero-version" id="heroVersion">v1.0</div>
+  </div>
+
+  <div class="hero-titles">
+    <span class="hero-word"><span class="inner">WORD</span></span>
+    <span class="hero-word"><span class="inner">DROP</span></span>
+  </div>
+
+  <div class="hero-bottom">
+    <p class="hero-desc" id="heroDesc"></p>
+    <div class="hero-actions">
+      <a class="btn" id="heroCta" href="#"><span>↓ <span id="heroCtaLabel"></span></span></a>
+      <a class="btn btn-outline" href="#origin"><span>Read more</span></a>
+    </div>
+  </div>
+</section>
+
+<!-- MARQUEE -->
+<div class="marquee-wrap">
+  <div class="marquee-track" id="marqueeTrack"></div>
+</div>
+
+<!-- ORIGIN -->
+<section id="origin" class="section">
+  <div class="tag">Origin</div>
+  <div class="layout">
+    <div class="reveal">
+      <h2 id="originHeading"></h2>
+      <p id="originBody"></p>
+    </div>
+    <div class="credits-stack reveal">
+      <div class="credit-item">
+        <div class="credit-marker"></div>
+        <div>
+          <div class="credit-name" id="creditHuman"></div>
+          <div class="credit-role" id="creditHumanRole"></div>
+        </div>
+      </div>
+      <div class="credit-item ai">
+        <div class="credit-marker"></div>
+        <div>
+          <div class="credit-name" id="creditAi"></div>
+          <div class="credit-role" id="creditAiRole"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section id="features" class="section">
+  <div class="tag">What it does</div>
+  <div class="feat-grid reveal" id="featuresGrid"></div>
+</section>
+
+<!-- INSTALL -->
+<section id="install" class="section">
+  <div class="tag">Installation</div>
+  <div class="steps-layout">
+    <h2 class="steps-heading reveal" id="installHeading"></h2>
+    <div class="steps-list reveal" id="installList"></div>
+  </div>
+</section>
+
+<!-- USAGE -->
+<section id="usage" class="section">
+  <div class="tag">Usage</div>
+  <div class="steps-layout">
+    <h2 class="steps-heading reveal" id="usageHeading"></h2>
+    <div class="steps-list reveal" id="usageList"></div>
+  </div>
+</section>
+
+<!-- CTA DOWNLOAD -->
+<section id="cta">
+  <div class="cta-tag" id="ctaVersion"></div>
+  <div class="cta-big">GET<br>IT<span>.</span></div>
+  <a class="btn reveal" id="downloadBtn" href="#"><span>↓ <span id="downloadLabel"></span></span></a>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <span id="footerText"></span>
+  <span id="footerYear"></span>
+</footer>
+
+<script>
+  // ── CONFIG — rediger direkte her ─────────────────────────────────────────
+  function loadConfig() {
+    return {
+      "site": {
+        "title": "Word Drop",
+        "tagline": "Drop a word on the world.",
+        "description": "A WordPress plugin that lets you send large, dramatic text overlays across your site — directly from your phone.",
+        "download_url": "https://www.larssohl.dk/worddrop/download/word-drop.zip",
+        "download_label": "Download Word Drop v1.0",
+        "version": "1.0",
+        "year": "2025"
+      },
+      "hero": {
+        "overlay_word": "DROP",
+        "sub": "WordPress overlay plugin with PWA"
+      },
+      "origin": {
+        "heading": "How\nit\nbegan.",
+        "body": "Word Drop was built in a collaboration between Lars Sohl — photographer and cinematographer — and Claude, an AI by Anthropic. The idea was simple: a direct line from your phone screen to your website's surface. No agency, no middlemen. Just an idea and a conversation that turned into code.",
+        "credit_human": "Lars Sohl",
+        "credit_human_url": "https://www.larssohl.dk",
+        "credit_human_role": "Concept",
+        "credit_ai": "Claude (Anthropic)",
+        "credit_ai_role": "Architecture & code"
+      },
+      "features": [
+        { "title": "Post from your phone",    "body": "The PWA gives you access directly from your phone's home screen. No login page, no browser navigation." },
+        { "title": "5 animation effects",     "body": "Fade-in, gradient-flow, pixel-assemble, glitch and draw-stroke. Pick what fits the moment." },
+        { "title": "5 display fonts",         "body": "Handpicked Google Fonts with character. Your text will never look boring." },
+        { "title": "Timed or permanent",      "body": "The overlay disappears automatically after 4–6 seconds — or stays on until you remove it." }
+      ],
+      "install": {
+        "heading": "Get\nstarted.",
+        "steps": [
+          "Download the ZIP file below",
+          "Go to WordPress Admin → Plugins → Add New → Upload plugin",
+          "Upload the ZIP and activate the plugin",
+          "Find 'Word Drop' in your admin menu and copy the PWA link",
+          "Open the link on your phone and add it to your home screen"
+        ]
+      },
+      "usage": {
+        "heading": "How\nto\nuse it.",
+        "steps": [
+          "Open the Word Drop app from your phone's home screen",
+          "Enter your PIN code (set in WordPress admin)",
+          "Type a word or short text",
+          "Choose font, effect and duration",
+          "Tap 'Post' — the overlay appears instantly on your site"
+        ]
+      },
+      "footer": {
+        "text": "Built in collaboration. No agency involved."
+      }
+    };
+  }
+
+  // ── RENDER ───────────────────────────────────────────────────────────────
+  function render(cfg) {
+    const s = cfg.site, h = cfg.hero, o = cfg.origin;
+    const inst = cfg.install, u = cfg.usage, f = cfg.footer;
+
+    document.title = s.title;
+
+    // Hero
+    document.getElementById('heroVersion').textContent  = 'v' + s.version;
+    document.getElementById('heroDesc').textContent     = s.description;
+    document.getElementById('heroCtaLabel').textContent = s.download_label;
+    document.getElementById('heroCta').href             = s.download_url;
+
+    // Marquee
+    const items = ['WordPress Plugin','PWA','Overlay','Animations','Fonts','Real-time','Mobile','No-code'];
+    const track = document.getElementById('marqueeTrack');
+    let mhtml = '';
+    [...items, ...items].forEach(item => {
+      mhtml += `<span class="marquee-item"><span>✦</span>${item}</span>`;
+    });
+    track.innerHTML = mhtml;
+
+    // Origin
+    document.getElementById('originHeading').innerHTML =
+      o.heading.replace(/\n/g, '<br>').replace(/\.$/, '<span class="accent">.</span>');
+    document.getElementById('originBody').innerHTML = o.body.replace(
+      'Lars Sohl',
+      `<a href="${o.credit_human_url}" target="_blank" rel="noopener">Lars Sohl</a>`
+    );
+    document.getElementById('creditHuman').innerHTML =
+      `<a href="${o.credit_human_url}" target="_blank" rel="noopener">${o.credit_human}</a>`;
+    document.getElementById('creditHumanRole').textContent = o.credit_human_role;
+    document.getElementById('creditAi').textContent        = o.credit_ai;
+    document.getElementById('creditAiRole').textContent    = o.credit_ai_role;
+
+    // Features
+    const grid = document.getElementById('featuresGrid');
+    cfg.features.forEach((feat, i) => {
+      grid.innerHTML += `<div class="feat">
+        <div class="feat-num">0${i+1}</div>
+        <div class="feat-title">${feat.title}</div>
+        <p class="feat-body">${feat.body}</p>
+      </div>`;
+    });
+
+    // Install
+    document.getElementById('installHeading').innerHTML =
+      inst.heading.replace(/\n/g, '<br>').replace(/\.$/, '<span class="accent">.</span>');
+    const iList = document.getElementById('installList');
+    inst.steps.forEach((step, i) => {
+      iList.innerHTML += `<div class="step-row">
+        <span class="step-n">${String(i+1).padStart(2,'0')}</span>
+        <span class="step-t">${step}</span>
+      </div>`;
+    });
+
+    // Usage
+    document.getElementById('usageHeading').innerHTML =
+      u.heading.replace(/\n/g, '<br>').replace(/\.$/, '<span class="accent">.</span>');
+    const uList = document.getElementById('usageList');
+    u.steps.forEach((step, i) => {
+      uList.innerHTML += `<div class="step-row">
+        <span class="step-n">${String(i+1).padStart(2,'0')}</span>
+        <span class="step-t">${step}</span>
+      </div>`;
+    });
+
+    // CTA + footer
+    document.getElementById('ctaVersion').textContent    = 'Version ' + s.version + ' · Free';
+    document.getElementById('downloadBtn').href          = s.download_url;
+    document.getElementById('downloadLabel').textContent = s.download_label;
+    document.getElementById('footerText').textContent    = f.text;
+    document.getElementById('footerYear').textContent    = '© ' + s.year + ' ' + s.title;
+  }
+
+  // ── SCROLL REVEAL ────────────────────────────────────────────────────────
+  function initReveal() {
+    const obs = new IntersectionObserver(entries => {
+      entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('up'); obs.unobserve(e.target); } });
+    }, { threshold: 0.08 });
+    document.querySelectorAll('.reveal').forEach(el => obs.observe(el));
+  }
+
+  // ── CURSOR ───────────────────────────────────────────────────────────────
+  function initCursor() {
+    const cur = document.getElementById('cursor');
+    if (!cur) return;
+    let mx = 0, my = 0, cx = 0, cy = 0;
+    document.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; });
+    document.querySelectorAll('a, button, .feat').forEach(el => {
+      el.addEventListener('mouseenter', () => cur.classList.add('big'));
+      el.addEventListener('mouseleave', () => cur.classList.remove('big'));
+    });
+    (function loop() {
+      cx += (mx - cx) * 0.18;
+      cy += (my - cy) * 0.18;
+      cur.style.left = cx + 'px';
+      cur.style.top  = cy + 'px';
+      requestAnimationFrame(loop);
+    })();
+  }
+
+  // ── INIT ─────────────────────────────────────────────────────────────────
+  const cfg = loadConfig();
+  render(cfg);
+  initReveal();
+  initCursor();
+</script>
+</body>
+</html>
